@@ -12,7 +12,7 @@ import { readJson, writeJsonAtomic } from "../util/persistence"
 import { useTheme } from "./theme"
 import { useToast } from "../ui/toast"
 import { useRoute } from "./route"
-import { usePermission } from "./permission"
+import { usePermission, type PermissionMode } from "./permission"
 import { cycleMode, modeLabel } from "../mode-cycle"
 
 export type LocalTheme = {
@@ -151,6 +151,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       if (sync.data.config.experimental?.auto_approve !== true) return permission.set("normal")
       if (agent.current()?.name === "build" && agent.list().some((item) => item.name === "build")) return
       permission.set("normal")
+    })
+
+    // Start in model-gated review when it's configured, instead of normal.
+    // Applied once so the user can still Tab or toggle away afterwards. Review is
+    // build-only; if its overlay can't attach later, the permission context drops
+    // back to normal on its own.
+    let autoApproveDefaulted = false
+    createEffect(() => {
+      if (autoApproveDefaulted || sync.status !== "complete") return
+      if (sync.data.config.experimental?.auto_approve !== true) return
+      if (agent.current()?.name !== "build") return
+      autoApproveDefaulted = true
+      permission.set("review")
     })
 
     function createModel() {
@@ -549,12 +562,33 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       })
     })
 
+    // The "auto" toggle maps to model-gated review when it's configured, so the
+    // keybind never drops the user into blind approve-all. Falls back to the
+    // original auto toggle when review is unavailable (no config, or not on the
+    // build agent that review requires).
+    const permissionApi = {
+      get mode() {
+        return permission.mode
+      },
+      get revision() {
+        return permission.revision
+      },
+      set: (mode: PermissionMode) => permission.set(mode),
+      attach: (sessionID: string) => permission.attach(sessionID),
+      toggle() {
+        const canReview =
+          sync.data.config.experimental?.auto_approve === true && agent.current()?.name === "build"
+        if (canReview) return permission.set(permission.mode === "review" ? "normal" : "review")
+        permission.toggle()
+      },
+    }
+
     const result = {
       model,
       agent,
       mcp,
       session,
-      permission,
+      permission: permissionApi,
     }
     return result
   },
