@@ -3168,6 +3168,7 @@ export class Permission extends HeyApiClient {
       requestID: string
       directory?: string
       workspace?: string
+      model?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3179,6 +3180,7 @@ export class Permission extends HeyApiClient {
             { in: "path", key: "requestID" },
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "query", key: "model" },
           ],
         },
       ],

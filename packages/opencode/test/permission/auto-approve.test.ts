@@ -690,6 +690,56 @@ describe("permission auto-approve model execution", () => {
     expect(streamInput?.agent.prompt).toBe(PermissionAutoApprove.policy)
   })
 
+  test("a per-call model override wins over the configured model", async () => {
+    const picked = ProviderTest.model({
+      id: ModelV2.ID.make("picked"),
+      providerID: ProviderV2.ID.make("picker"),
+    })
+    const requested: Array<{ providerID: string; modelID: string }> = []
+    let fallback = 0
+    const result = await PermissionAutoApprove.Service.use((service) =>
+      service.classify(request(), { model: "picker/picked" }),
+    ).pipe(
+      Effect.provide(
+        layer({
+          configured: "dedicated/classifier",
+          getModel: (providerID, modelID) => {
+            requested.push({ providerID, modelID })
+            return Effect.succeed(picked)
+          },
+          getSmallModel: () => {
+            fallback++
+            return Effect.succeed(undefined)
+          },
+          stream: () => response("AUTO_APPROVE"),
+        }),
+      ),
+      Effect.runPromise,
+    )
+    expect(result).toEqual({ approved: true })
+    expect(requested).toEqual([{ providerID: "picker", modelID: "picked" }])
+    expect(fallback).toBe(0)
+  })
+
+  test("an unparseable per-call model override fails closed", async () => {
+    let streamed = 0
+    const result = await PermissionAutoApprove.Service.use((service) =>
+      service.classify(request(), { model: "not-a-valid-model" }),
+    ).pipe(
+      Effect.provide(
+        layer({
+          stream: () => {
+            streamed++
+            return response("AUTO_APPROVE")
+          },
+        }),
+      ),
+      Effect.runPromise,
+    )
+    expect(result).toEqual({ approved: false })
+    expect(streamed).toBe(0)
+  })
+
   test("uses only the causal parent provider's small model", async () => {
     const current = turn("List files", { providerID: "session-provider" })
     const providers: string[] = []

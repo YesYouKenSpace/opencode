@@ -43,6 +43,7 @@ export const permissionHandlers = HttpApiBuilder.group(InstanceHttpApi, "permiss
 
     const classify = Effect.fn("PermissionHttpApi.classify")(function* (ctx: {
       params: { requestID: PermissionV1.ID }
+      query: { model?: string }
     }) {
       const request = (yield* svc.list()).find((item) => item.id === ctx.params.requestID)
       if (!request) {
@@ -51,7 +52,7 @@ export const permissionHandlers = HttpApiBuilder.group(InstanceHttpApi, "permiss
           message: `Permission request not found: ${ctx.params.requestID}`,
         })
       }
-      const result = yield* autoApprove.classify(request)
+      const result = yield* autoApprove.classify(request, { model: ctx.query.model })
       if (!result.approved) return result
       if ((yield* svc.list()).some((item) => item === request)) return result
       return { ...result, approved: false }

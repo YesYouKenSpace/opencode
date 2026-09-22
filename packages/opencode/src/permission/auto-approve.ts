@@ -40,7 +40,10 @@ const agent: Agent.Info = {
 }
 
 export interface Interface {
-  readonly classify: (request: PermissionV1.Request) => Effect.Effect<PermissionV1.ClassificationResult>
+  readonly classify: (
+    request: PermissionV1.Request,
+    options?: { model?: string },
+  ) => Effect.Effect<PermissionV1.ClassificationResult>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/PermissionAutoApprove") {}
@@ -364,7 +367,10 @@ const layer = Layer.effect(
     const session = yield* Session.Service
     const active = new WeakMap<PermissionV1.Request, Deferred.Deferred<PermissionV1.ClassificationResult>>()
 
-    const run = Effect.fn("PermissionAutoApprove.classify")(function* (request: PermissionV1.Request) {
+    const run = Effect.fn("PermissionAutoApprove.classify")(function* (
+      request: PermissionV1.Request,
+      override?: { model?: string },
+    ) {
       const cfg = yield* config.get()
       const detailed = cfg.auto_approve?.show_details === true
       const unavailable = (category: string): PermissionV1.ClassificationResult =>
@@ -393,8 +399,13 @@ const layer = Layer.effect(
       const context = evidence(request, history)
       if (!context) return unavailable("not_classifiable")
 
-      const hasConfigured = cfg.auto_approve !== undefined && Object.hasOwn(cfg.auto_approve, "model")
-      const configuredValue = cfg.auto_approve?.model
+      // A caller-supplied model (the per-session review picker) wins over config,
+      // and is validated and resolved on the same path as a configured model, so a
+      // bad value fails closed rather than silently falling back.
+      const overrideValue = typeof override?.model === "string" && override.model.length > 0 ? override.model : undefined
+      const hasConfigured =
+        overrideValue !== undefined || (cfg.auto_approve !== undefined && Object.hasOwn(cfg.auto_approve, "model"))
+      const configuredValue = overrideValue ?? cfg.auto_approve?.model
       const configured =
         typeof configuredValue === "string" && /^[^/\s]+\/\S+$/.test(configuredValue)
           ? Provider.parseModel(configuredValue)
@@ -484,13 +495,13 @@ const layer = Layer.effect(
         ) satisfies PermissionV1.ClassificationResult
       })
 
-    const classify: Interface["classify"] = (request) =>
+    const classify: Interface["classify"] = (request, options) =>
       Effect.suspend(() => {
         const existing = active.get(request)
         if (existing) return Deferred.await(existing)
         const deferred = Deferred.makeUnsafe<PermissionV1.ClassificationResult>()
         active.set(request, deferred)
-        return run(request).pipe(
+        return run(request, options).pipe(
           Effect.timeoutOrElse({
             duration: "15 seconds",
             orElse: () => failed(request, "timeout"),

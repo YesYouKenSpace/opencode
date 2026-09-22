@@ -9324,6 +9324,7 @@ export type PermissionClassifyData = {
   query?: {
     directory?: string
     workspace?: string
+    model?: string
   }
   url: "/permission/{requestID}/classify"
 }

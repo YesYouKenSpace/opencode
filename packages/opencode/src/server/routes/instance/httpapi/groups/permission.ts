@@ -6,7 +6,11 @@ import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "e
 import { PermissionNotFoundError } from "../errors"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
-import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
+import {
+  WorkspaceRoutingMiddleware,
+  WorkspaceRoutingQuery,
+  WorkspaceRoutingQueryFields,
+} from "../middleware/workspace-routing"
 import { described } from "./metadata"
 
 const root = "/permission"
@@ -15,6 +19,13 @@ const ReplyPayload = Schema.Struct({
   message: Schema.optional(Schema.String),
 })
 const OverlayPayload = Schema.Struct({ enabled: Schema.Boolean })
+// Optional per-session classifier model override (provider/model), carried as a
+// query param so a classify call with no override stays a bodyless POST. When
+// omitted, the classifier uses the configured or fallback model.
+const ClassifyQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  model: Schema.optional(Schema.String),
+})
 
 export const PermissionApi = HttpApi.make("permission")
   .add(
@@ -45,7 +56,7 @@ export const PermissionApi = HttpApi.make("permission")
         ),
         HttpApiEndpoint.post("classify", `${root}/:requestID/classify`, {
           params: { requestID: PermissionV1.ID },
-          query: WorkspaceRoutingQuery,
+          query: ClassifyQuery,
           success: described(PermissionV1.ClassificationResult, "Permission classification result"),
           error: [HttpApiError.BadRequest, PermissionNotFoundError],
         }).annotateMerge(

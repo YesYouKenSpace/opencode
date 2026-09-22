@@ -351,8 +351,17 @@ export const {
             }
             attempt.timeout = setTimeout(() => fallbackPermission(attempt), fallbackDelay())
             autoApprovals.set(request.id, attempt)
+            const reviewModel = permission.reviewModel(request.sessionID)
             void sdk.client.permission
-              .classify({ requestID: request.id, directory, workspace }, { signal: attempt.classify.signal })
+              .classify(
+                {
+                  requestID: request.id,
+                  directory,
+                  workspace,
+                  ...(reviewModel ? { model: `${reviewModel.providerID}/${reviewModel.modelID}` } : {}),
+                },
+                { signal: attempt.classify.signal },
+              )
               .then((result) => {
                 const decision = result.data?.approved === true
                 // The audit trail is not opt-in: show_details controls only the classifier

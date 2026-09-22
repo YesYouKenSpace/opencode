@@ -40,6 +40,7 @@ import { LocationProvider } from "./context/location"
 import { LocalProvider, useLocal } from "./context/local"
 import { PermissionProvider } from "./context/permission"
 import { DialogModel } from "./component/dialog-model"
+import { DialogReviewModel } from "./component/dialog-review-model"
 import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
 import { DialogStatus } from "./component/dialog-status"
@@ -636,6 +637,17 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         slashAliases: ["mo"],
         run: () => {
           dialog.replace(() => <DialogModel />)
+        },
+      },
+      {
+        name: "review_model.list",
+        title: "Switch review model",
+        category: "Agent",
+        // Only meaningful when model-gated review is configured.
+        hidden: sync.data.config.experimental?.auto_approve !== true,
+        slashName: "review-model",
+        run: () => {
+          dialog.replace(() => <DialogReviewModel />)
         },
       },
       {

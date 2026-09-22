@@ -19,9 +19,19 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
     const route = useRoute()
     const sdk = useSDK()
     const toast = useToast()
-    const [store, setStore] = createStore<{ mode: PermissionMode; revision: number }>({
+    const [store, setStore] = createStore<{
+      mode: PermissionMode
+      revision: number
+      // Per-session overrides for the model-gated review classifier, chosen at runtime
+      // via the review-model picker and keyed by sessionID so concurrent sessions can
+      // each run a different classifier model. In-memory only (dies with the instance)
+      // and sent with each classify call. A missing entry means the configured/fallback
+      // classifier model is used.
+      reviewModels: Record<string, { providerID: string; modelID: string } | undefined>
+    }>({
       mode: args.auto ? "auto" : "normal",
       revision: 0,
+      reviewModels: {},
     })
 
     function set(mode: PermissionMode) {
@@ -146,6 +156,12 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       },
       get revision() {
         return store.revision
+      },
+      reviewModel(sessionID: string) {
+        return store.reviewModels[sessionID]
+      },
+      setReviewModel(sessionID: string, model: { providerID: string; modelID: string } | undefined) {
+        setStore("reviewModels", sessionID, model)
       },
       set,
       toggle() {
