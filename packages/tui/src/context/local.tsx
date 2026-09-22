@@ -13,7 +13,7 @@ import { useTheme } from "./theme"
 import { useToast } from "../ui/toast"
 import { useRoute } from "./route"
 import { usePermission, type PermissionMode } from "./permission"
-import { cycleMode, modeLabel } from "../mode-cycle"
+import { cycleMode, modeLabel, startupPermission } from "../mode-cycle"
 
 export type LocalTheme = {
   secondary: RGBA
@@ -153,17 +153,24 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       permission.set("normal")
     })
 
-    // Start in model-gated review when it's configured, instead of normal.
-    // Applied once so the user can still Tab or toggle away afterwards. Review is
-    // build-only; if its overlay can't attach later, the permission context drops
-    // back to normal on its own.
-    let autoApproveDefaulted = false
+    // Decide the mode a fresh session lands on once config and the active agent
+    // are known. Applied once so the user can still Tab or toggle away afterwards.
+    // Keeps the standing "configured build -> review" default, and makes --auto
+    // explicit: it maps to model-gated review when review is available, and only
+    // falls back to blind approve-all when it isn't (no config, or not build).
+    // Review is build-only; if its overlay can't attach later, the guard effect
+    // above drops the permission context back to normal on its own.
+    let landed = false
     createEffect(() => {
-      if (autoApproveDefaulted || sync.status !== "complete") return
-      if (sync.data.config.experimental?.auto_approve !== true) return
-      if (agent.current()?.name !== "build") return
-      autoApproveDefaulted = true
-      permission.set("review")
+      if (landed || sync.status !== "complete") return
+      const target = startupPermission({
+        auto: args.auto === true,
+        autoApprove: sync.data.config.experimental?.auto_approve === true,
+        agent: agent.current()?.name,
+      })
+      if (!target) return
+      landed = true
+      permission.set(target)
     })
 
     function createModel() {

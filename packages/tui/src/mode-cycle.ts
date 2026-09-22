@@ -39,6 +39,22 @@ export function cycleMode(input: {
   return ring[(current + input.direction + ring.length) % ring.length]
 }
 
+// Decides the permission mode a fresh TUI should land on once config and the
+// active agent are known. Model-gated review is the standing default whenever
+// it is configured on the build agent -- independent of --auto. When review is
+// unavailable, --auto keeps its blind approve-all meaning; a plain launch stays
+// on normal prompts. Returns undefined for "not yet -- keep the current mode and
+// re-decide later" (review is configured but the agent isn't build yet), so the
+// caller applies this once without consuming its one-shot prematurely.
+export function startupPermission(input: {
+  auto: boolean
+  autoApprove: boolean
+  agent?: string
+}): PermissionMode | undefined {
+  if (input.autoApprove) return input.agent === "build" ? "review" : undefined
+  return input.auto ? "auto" : undefined
+}
+
 export function modeLabel(state: ModeCycleState) {
   if (state.permission === "review" && state.agent === "build") return "Auto-approve"
   if (state.agent === "build") return "Build"

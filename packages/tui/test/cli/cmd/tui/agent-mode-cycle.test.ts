@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { CommandMap, Definitions } from "../../../../src/config/keybind"
-import { cycleMode, modeLabel, type ModeCycleState } from "../../../../src/mode-cycle"
+import { cycleMode, modeLabel, startupPermission, type ModeCycleState } from "../../../../src/mode-cycle"
+import type { PermissionMode } from "../../../../src/context/permission"
 
 const available = ["build", "plan", "reviewer"]
 
@@ -65,6 +66,30 @@ describe("agent mode cycle", () => {
       cycleMode({ direction: 1, current: { agent: "build", permission: "review" }, available, autoApprove: false }),
     ).toEqual({ agent: "build", permission: "normal" })
   })
+
+  test.each([
+    // --auto maps to model-gated review when review is available (config + build)...
+    [{ auto: true, autoApprove: true, agent: "build" }, "review"],
+    // ...and only falls back to blind approve-all when review is unavailable.
+    [{ auto: true, autoApprove: false, agent: "build" }, "auto"],
+    [{ auto: true, autoApprove: false, agent: "plan" }, "auto"],
+    [{ auto: true, autoApprove: false, agent: undefined }, "auto"],
+    // config on but not on build yet -> wait (undefined), so the one-shot can
+    // still fire as review once the user lands on build.
+    [{ auto: true, autoApprove: true, agent: "plan" }, undefined],
+    [{ auto: true, autoApprove: true, agent: undefined }, undefined],
+    // The standing default holds without --auto: configured build -> review.
+    [{ auto: false, autoApprove: true, agent: "build" }, "review"],
+    [{ auto: false, autoApprove: true, agent: "plan" }, undefined],
+    // Plain launch, no review config -> stay on normal prompts (undefined).
+    [{ auto: false, autoApprove: false, agent: "build" }, undefined],
+    [{ auto: false, autoApprove: false, agent: undefined }, undefined],
+  ] satisfies Array<[Parameters<typeof startupPermission>[0], PermissionMode | undefined]>)(
+    "startup landing $0 -> $1",
+    (input, expected) => {
+      expect(startupPermission(input)).toBe(expected)
+    },
+  )
 
   test("keeps compatible shortcuts and labels", () => {
     expect(Definitions.agent_cycle.default).toBe("tab")
