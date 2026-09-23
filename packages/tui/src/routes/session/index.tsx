@@ -1716,7 +1716,10 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
   const reportable = createMemo(() => {
     const trace = classifier()
     if (!trace) return undefined
-    if (trace.applied || trace.input !== undefined || trace.output !== undefined) return trace
+    // A reason is an explanation for the fallback prompt, so it is reportable even
+    // though the TUI never acted on the verdict.
+    if (trace.applied || trace.input !== undefined || trace.output !== undefined || trace.reason !== undefined)
+      return trace
     return undefined
   })
 
@@ -1807,7 +1810,12 @@ function AutoApproveTrace(props: { trace: AutoApprovalTrace }) {
   const [expanded, setExpanded] = createSignal(false)
   const syntax = createSyntaxStyleMemo(() => generateSubtleSyntax(theme))
   const details = createMemo(() => props.trace.input !== undefined || props.trace.output !== undefined)
-  const label = createMemo(() => (props.trace.applied ? "Auto-approved" : "Classifier"))
+  const label = createMemo(() => {
+    if (props.trace.applied) return "Auto-approved"
+    // A reason-only trace (no classifier output) is a failure, not a verdict.
+    if (props.trace.output === undefined && props.trace.reason !== undefined) return "Auto-approve unavailable"
+    return "Classifier"
+  })
   const summary = createMemo(() => {
     // an approved action is often the only thing left on screen once the tool row
     // collapses, so name the action rather than echoing the classifier token
@@ -1816,7 +1824,7 @@ function AutoApproveTrace(props: { trace: AutoApprovalTrace }) {
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, 200)
-    return props.trace.output?.replace(/\s+/g, " ").trim() || "(empty)"
+    return props.trace.output?.replace(/\s+/g, " ").trim() || props.trace.reason || "(empty)"
   })
 
   return (

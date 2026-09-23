@@ -33,7 +33,6 @@ import { batch, createEffect, createMemo, onMount } from "solid-js"
 import path from "path"
 import { useKV } from "./kv"
 import { usePermission } from "./permission"
-import { useToast } from "../ui/toast"
 
 const emptyConsoleState: ConsoleState = {
   consoleManagedProviders: [],
@@ -71,6 +70,8 @@ export type AutoApprovalTrace = Partial<PermissionClassificationDetails> & {
   approved: boolean
   /** The TUI replied "once" on the user's behalf, so this action ran without ever being shown. */
   applied?: boolean
+  /** Non-sensitive category when the classifier could not decide (e.g. "model_unavailable"). */
+  reason?: string
 }
 
 function search<T>(items: T[], target: string, key: (item: T) => string) {
@@ -102,20 +103,6 @@ export const {
     const startup = useTuiStartup()
     const kv = useKV()
     const permission = usePermission()
-    const toast = useToast()
-    // Surface a classifier failure once, coalescing repeats: a systemic issue
-    // (unreachable model, timeout) fails every pending request, so without this a
-    // burst would spam identical toasts.
-    let lastClassifierFailure: { reason: string; at: number } | undefined
-    function notifyClassifierFailure(reason: string) {
-      const now = Date.now()
-      if (lastClassifierFailure?.reason === reason && now - lastClassifierFailure.at < 15_000) return
-      lastClassifierFailure = { reason, at: now }
-      toast.show({
-        variant: "warning",
-        message: `Review classifier unavailable (${reason}) — asking instead`,
-      })
-    }
     const [store, setStore] = createStore<{
       status: "loading" | "partial" | "complete"
       provider: Provider[]
@@ -379,12 +366,16 @@ export const {
               )
               .then((result) => {
                 const decision = result.data?.approved === true
+                const reason = result.data?.reason
                 // The audit trail is not opt-in: show_details controls only the classifier
-                // input/output, never whether the decision itself is recorded.
-                if (decision || result.data?.details) {
+                // input/output, never whether the decision itself is recorded. A failure
+                // reason is non-sensitive, so it is recorded even without show_details and
+                // surfaced inline on the fallback prompt it produced.
+                if (decision || result.data?.details || reason) {
                   setStore("auto_approve", request.id, {
                     request,
                     approved: decision,
+                    ...(reason ? { reason } : {}),
                     ...(result.data?.details ?? {}),
                   })
                 }
@@ -398,10 +389,6 @@ export const {
                   return
                 }
                 if (result.data?.approved !== true) {
-                  // `reason` is set only when the classifier could not decide (failure or
-                  // unavailable), never on a genuine ASK verdict, so this never fires for
-                  // routine prompts.
-                  if (result.data?.reason) notifyClassifierFailure(result.data.reason)
                   fallbackPermission(attempt)
                   return
                 }

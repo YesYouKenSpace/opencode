@@ -802,31 +802,37 @@ describe("tui model-gated permission review mode", () => {
     }
   })
 
-  test("toasts a lightweight warning when the classifier reports a failure reason", async () => {
+  test("records a non-sensitive failure reason for the fallback prompt", async () => {
     const mounted = await mount((url) => {
       if (url.pathname.endsWith("/classify")) return json({ approved: false, reason: "model_unavailable" })
     })
 
     try {
       mounted.permission.set("review")
-      mounted.emit(asked(permission("per_fail")))
-      await wait(() => mounted.toast.currentToast?.message.includes("model_unavailable") === true)
-      expect(mounted.toast.currentToast?.variant).toBe("warning")
+      const request = permission("per_fail")
+      const tool = request.tool!
+      mounted.emit(asked(request))
+      await wait(() => mounted.sync.autoApprove.get(tool.messageID, tool.callID) !== undefined)
+      const trace = mounted.sync.autoApprove.get(tool.messageID, tool.callID)
+      expect(trace?.approved).toBe(false)
+      expect(trace?.reason).toBe("model_unavailable")
     } finally {
       mounted.app.renderer.destroy()
     }
   })
 
-  test("does not toast on a genuine ASK verdict", async () => {
+  test("records no trace for a genuine ASK verdict", async () => {
     const mounted = await mount((url) => {
       if (url.pathname.endsWith("/classify")) return json({ approved: false })
     })
 
     try {
       mounted.permission.set("review")
-      mounted.emit(asked(permission("per_plain_ask")))
+      const request = permission("per_plain_ask")
+      const tool = request.tool!
+      mounted.emit(asked(request))
       await wait(() => mounted.sync.data.permission.ses_auto?.length === 1)
-      expect(mounted.toast.currentToast).toBeNull()
+      expect(mounted.sync.autoApprove.get(tool.messageID, tool.callID)).toBeUndefined()
     } finally {
       mounted.app.renderer.destroy()
     }

@@ -139,7 +139,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
     if (!tool) return undefined
     const trace = sync.autoApprove.get(tool.messageID, tool.callID)
     if (!trace) return undefined
-    if (trace.input === undefined && trace.output === undefined) return undefined
+    if (trace.input === undefined && trace.output === undefined && trace.reason === undefined) return undefined
     const rendered = (sync.data.part[tool.messageID] ?? []).some(
       (part) => part.type === "tool" && part.callID === tool.callID,
     )
@@ -407,7 +407,9 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
                 {(trace) => (
                   <box flexDirection="row" gap={1} paddingLeft={2} flexShrink={0}>
                     <text fg={trace().approved ? theme.success : theme.warning} wrapMode="none">
-                      {"Classifier: " + (trace().output?.replace(/\s+/g, " ").trim() || "(empty)")}
+                      {trace().output
+                        ? "Classifier: " + trace().output!.replace(/\s+/g, " ").trim()
+                        : "Auto-approve unavailable: " + (trace().reason ?? "unknown")}
                     </text>
                   </box>
                 )}
