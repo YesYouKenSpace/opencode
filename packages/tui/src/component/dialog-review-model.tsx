@@ -17,8 +17,9 @@ type ReviewModelValue = { providerID: string; modelID: string } | undefined
 
 // opencode's own small-model families (Provider.smallModelFamilyPriority plus the
 // copilot-only gpt-mini). Members are marked "Fast" and surfaced in a recommended
-// section, since the classifier runs under a 15s deadline. Reasoning models are
-// excluded from the recommendation because the classifier rejects reasoning output.
+// section, since the classifier runs under a 15s deadline. Reasoning models work
+// (they run at the lowest exposed effort and their verdict is honored) but are kept
+// out of the recommendation because they are slower and can hit the deadline.
 const SMALL_FAMILIES = new Set(["gemini-flash", "gpt-mini", "gpt-nano", "claude-haiku"])
 const isFast = (info: { family?: string }) => !!info.family && SMALL_FAMILIES.has(info.family)
 const isReasoning = (info: { capabilities?: { reasoning?: boolean } }) => info.capabilities?.reasoning === true
@@ -41,9 +42,9 @@ export function DialogReviewModel() {
       return
     }
     if (value) {
-      // Validate the pick against the live provider list, and warn on a reasoning
-      // model: the classifier rejects reasoning output, so it would fall back to
-      // prompts on every request.
+      // Validate the pick against the live provider list, and note a reasoning model:
+      // it runs at the lowest exposed effort, but is slower and can hit the 15s deadline
+      // (which fails closed to a prompt).
       const info = sync.data.provider.find((provider) => provider.id === value.providerID)?.models[value.modelID]
       if (!info) {
         toast.show({ variant: "error", message: `${value.providerID}/${value.modelID} is not an available model` })
@@ -52,8 +53,8 @@ export function DialogReviewModel() {
       }
       if (isReasoning(info)) {
         toast.show({
-          variant: "warning",
-          message: `${info.name ?? value.modelID} is a reasoning model — the review classifier rejects reasoning output and will fall back to prompts`,
+          variant: "info",
+          message: `${info.name ?? value.modelID} is a reasoning model — it runs at lowest effort, but may be slower and can hit the 15s classification deadline`,
         })
       }
     }

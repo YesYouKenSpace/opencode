@@ -250,11 +250,14 @@ describe("permission auto-approve parsing", () => {
     ).toBe(true)
   })
 
-  test("rejects provider errors, reasoning, and every tool event variant", () => {
-    expect(PermissionAutoApprove.approved([text, LLMEvent.providerError({ message: "failed" }), finish])).toBe(false)
+  test("accepts a clean verdict from a reasoning model", () => {
     expect(
-      PermissionAutoApprove.approved([LLMEvent.reasoningDelta({ id: "reasoning", text: "approve" }), text, finish]),
-    ).toBe(false)
+      PermissionAutoApprove.approved([LLMEvent.reasoningDelta({ id: "reasoning", text: "thinking" }), text, finish]),
+    ).toBe(true)
+  })
+
+  test("rejects provider errors and every tool event variant", () => {
+    expect(PermissionAutoApprove.approved([text, LLMEvent.providerError({ message: "failed" }), finish])).toBe(false)
     const toolEvents = [
       LLMEvent.toolInputStart({ id: "tool", name: "unsafe" }),
       LLMEvent.toolInputDelta({ id: "tool", name: "unsafe", text: "{}" }),
@@ -773,6 +776,23 @@ describe("permission auto-approve model execution", () => {
     })
   })
 
+  test("keeps an ASK reason in the recorded output, gated by details", async () => {
+    // The model may append a brief reason after ASK; the verdict is still ASK and
+    // the reason rides the show_details output, withheld by default.
+    expect(await classify({ output: "ASK writes outside the working directory", showDetails: true })).toEqual({
+      approved: false,
+      details: {
+        input: JSON.stringify({
+          userRequest: "Run git status",
+          toolCall: { name: "bash", input: {} },
+          action: { permission: "bash", patterns: ["git status"], metadata: { command: "git status" } },
+        }),
+        output: "ASK writes outside the working directory",
+      },
+    })
+    expect(await classify({ output: "ASK writes outside the working directory" })).toEqual({ approved: false })
+  })
+
   test("surfaces classifier failures in details when enabled", async () => {
     expect(
       await classify({
@@ -897,7 +917,7 @@ describe("permission auto-approve model execution", () => {
     })
   })
 
-  test("explains a verdict rejected for reasoning output", async () => {
+  test("honors a reasoning model's verdict, recording only the final text", async () => {
     const model = ProviderTest.model({
       id: ModelV2.ID.make("classifier"),
       providerID: ProviderV2.ID.make("dedicated"),
@@ -913,8 +933,9 @@ describe("permission auto-approve model execution", () => {
           LLMEvent.finish({ reason: "stop" }),
         ),
     })
-    expect(result.approved).toBe(false)
-    expect(result.details?.output).toBe("(rejected: reasoning_output) AUTO_APPROVE")
+    expect(result.approved).toBe(true)
+    // The reasoning trace is never recorded; only the verdict text is.
+    expect(result.details?.output).toBe("AUTO_APPROVE")
   })
 
   test("refuses classification unless the beta flag is enabled", async () => {

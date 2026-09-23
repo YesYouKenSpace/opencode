@@ -308,7 +308,11 @@ export function approved(events: ReadonlyArray<LLMEvent>) {
       return false
   }
   if (events.some(LLMEvent.is.providerError)) return false
-  if (reasoning(events)) return false
+  // Reasoning is allowed: it is the model's internal channel, and the verdict is
+  // still the exact final text (output() reads only textDeltas). A reasoning model
+  // runs at the lowest effort the provider exposes (small requests take variant[0],
+  // see ProviderTransform.smallOptions), and the token cap budgets for a minimal
+  // trace. Every other strictness check below still holds.
   if (
     events.some(
       (event) =>
@@ -462,9 +466,6 @@ const layer = Layer.effect(
 
       const decision = approved(events)
       const text = output(events)
-      // approved() rejects reasoning outright, so without this the trace would read
-      // "AUTO_APPROVE" next to a refusal.
-      const rejected = !decision && reasoning(events) && text.trim() === "AUTO_APPROVE" ? "(rejected: reasoning_output)" : undefined
       yield* Effect.logInfo("auto-approve classification", {
         requestID: request.id,
         sessionID: request.sessionID,
@@ -474,7 +475,7 @@ const layer = Layer.effect(
       })
       return {
         approved: decision,
-        ...(detailed ? { details: { input, output: [rejected, text].filter(Boolean).join(" ") } } : {}),
+        ...(detailed ? { details: { input, output: text } } : {}),
       }
     })
 
