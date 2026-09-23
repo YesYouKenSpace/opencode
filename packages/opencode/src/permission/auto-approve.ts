@@ -375,8 +375,8 @@ const layer = Layer.effect(
       const detailed = cfg.auto_approve?.show_details === true
       const unavailable = (category: string): PermissionV1.ClassificationResult =>
         detailed
-          ? { approved: false, details: { input: "", output: `(unavailable: ${category})` } }
-          : { approved: false }
+          ? { approved: false, reason: category, details: { input: "", output: `(unavailable: ${category})` } }
+          : { approved: false, reason: category }
 
       if (cfg.experimental?.auto_approve !== true) {
         yield* Effect.logWarning("auto-approve classification unavailable", {
@@ -490,8 +490,8 @@ const layer = Layer.effect(
         )
         return (
           detailed
-            ? { approved: false, details: { input: "", output: `(failed: ${category})` } }
-            : { approved: false }
+            ? { approved: false, reason: category, details: { input: "", output: `(failed: ${category})` } }
+            : { approved: false, reason: category }
         ) satisfies PermissionV1.ClassificationResult
       })
 

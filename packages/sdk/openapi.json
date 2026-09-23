@@ -23121,6 +23121,9 @@
           },
           "details": {
             "$ref": "#/components/schemas/PermissionClassificationDetails"
+          },
+          "reason": {
+            "type": "string"
           }
         },
         "required": ["approved"],

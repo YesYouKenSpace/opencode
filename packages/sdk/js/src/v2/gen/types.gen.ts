@@ -2502,6 +2502,7 @@ export type PermissionClassificationDetails = {
 export type PermissionClassificationResult = {
   approved: boolean
   details?: PermissionClassificationDetails
+  reason?: string
 }
 
 export type ProviderAuthMethod = {

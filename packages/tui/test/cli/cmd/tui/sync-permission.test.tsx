@@ -757,4 +757,78 @@ describe("tui model-gated permission review mode", () => {
       mounted.app.renderer.destroy()
     }
   })
+
+  test("sends the per-session review model and applies a mid-session change", async () => {
+    const models: Array<string | null> = []
+    const mounted = await mount((url) => {
+      if (url.pathname.endsWith("/classify")) {
+        models.push(url.searchParams.get("model"))
+        return json({ approved: false })
+      }
+    })
+
+    try {
+      mounted.permission.set("review")
+
+      // No override selected -> classify carries no model param.
+      mounted.emit(asked(permission("per_default")))
+      await wait(() => models.length === 1)
+      expect(models[0]).toBeNull()
+
+      // Pick a model mid-session -> next classification uses it.
+      mounted.permission.setReviewModel("ses_auto", { providerID: "anthropic", modelID: "claude-haiku" })
+      mounted.emit(asked(permission("per_haiku")))
+      await wait(() => models.length === 2)
+      expect(models[1]).toBe("anthropic/claude-haiku")
+
+      // Change it again mid-session -> the newer model wins immediately.
+      mounted.permission.setReviewModel("ses_auto", { providerID: "openai", modelID: "gpt-nano" })
+      mounted.emit(asked(permission("per_nano")))
+      await wait(() => models.length === 3)
+      expect(models[2]).toBe("openai/gpt-nano")
+
+      // A different session keeps its own (unset) model.
+      mounted.emit(asked(permission("per_other", "ses_other")))
+      await wait(() => models.length === 4)
+      expect(models[3]).toBeNull()
+
+      // Clearing the override falls back to the default (no model param).
+      mounted.permission.setReviewModel("ses_auto", undefined)
+      mounted.emit(asked(permission("per_cleared")))
+      await wait(() => models.length === 5)
+      expect(models[4]).toBeNull()
+    } finally {
+      mounted.app.renderer.destroy()
+    }
+  })
+
+  test("toasts a lightweight warning when the classifier reports a failure reason", async () => {
+    const mounted = await mount((url) => {
+      if (url.pathname.endsWith("/classify")) return json({ approved: false, reason: "model_unavailable" })
+    })
+
+    try {
+      mounted.permission.set("review")
+      mounted.emit(asked(permission("per_fail")))
+      await wait(() => mounted.toast.currentToast?.message.includes("model_unavailable") === true)
+      expect(mounted.toast.currentToast?.variant).toBe("warning")
+    } finally {
+      mounted.app.renderer.destroy()
+    }
+  })
+
+  test("does not toast on a genuine ASK verdict", async () => {
+    const mounted = await mount((url) => {
+      if (url.pathname.endsWith("/classify")) return json({ approved: false })
+    })
+
+    try {
+      mounted.permission.set("review")
+      mounted.emit(asked(permission("per_plain_ask")))
+      await wait(() => mounted.sync.data.permission.ses_auto?.length === 1)
+      expect(mounted.toast.currentToast).toBeNull()
+    } finally {
+      mounted.app.renderer.destroy()
+    }
+  })
 })

@@ -67,6 +67,11 @@ export type ClassificationDetails = typeof ClassificationDetails.Type
 export const ClassificationResult = Schema.Struct({
   approved: Schema.Boolean,
   details: Schema.optional(ClassificationDetails),
+  // Non-sensitive category set whenever the classifier could not produce a
+  // decision (e.g. "model_unavailable", "timeout"). Present regardless of
+  // show_details -- unlike `details`, it never carries the request text -- so
+  // clients can distinguish a failed classification from a genuine ASK verdict.
+  reason: Schema.optional(Schema.String),
 }).annotate({ identifier: "PermissionClassificationResult" })
 export type ClassificationResult = typeof ClassificationResult.Type
 

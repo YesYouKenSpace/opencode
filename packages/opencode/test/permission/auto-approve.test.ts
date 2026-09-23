@@ -736,7 +736,7 @@ describe("permission auto-approve model execution", () => {
       ),
       Effect.runPromise,
     )
-    expect(result).toEqual({ approved: false })
+    expect(result).toEqual({ approved: false, reason: "invalid_configured_model" })
     expect(streamed).toBe(0)
   })
 
@@ -781,10 +781,12 @@ describe("permission auto-approve model execution", () => {
       }),
     ).toEqual({
       approved: false,
+      reason: "subagent_session",
       details: { input: "", output: "(unavailable: subagent_session)" },
     })
     expect(await classify({ showDetails: true }, request({ tool: undefined }))).toEqual({
       approved: false,
+      reason: "not_classifiable",
       details: { input: "", output: "(unavailable: not_classifiable)" },
     })
     expect(
@@ -794,6 +796,7 @@ describe("permission auto-approve model execution", () => {
       }),
     ).toEqual({
       approved: false,
+      reason: "invalid_configured_model",
       details: { input: "", output: "(unavailable: invalid_configured_model)" },
     })
     expect(
@@ -803,6 +806,7 @@ describe("permission auto-approve model execution", () => {
       }),
     ).toEqual({
       approved: false,
+      reason: "model_unavailable",
       details: { input: "", output: "(unavailable: model_unavailable)" },
     })
     expect(
@@ -812,6 +816,7 @@ describe("permission auto-approve model execution", () => {
       }),
     ).toEqual({
       approved: false,
+      reason: "model_or_context_error",
       details: { input: "", output: "(failed: model_or_context_error)" },
     })
   })
@@ -819,6 +824,7 @@ describe("permission auto-approve model execution", () => {
   test("surfaces the classification deadline in details when enabled", async () => {
     expect(await classify({ showDetails: true, stream: () => Stream.never })).toEqual({
       approved: false,
+      reason: "timeout",
       details: { input: "", output: "(failed: timeout)" },
     })
   }, 20_000)
@@ -857,7 +863,7 @@ describe("permission auto-approve model execution", () => {
             return Effect.succeed(ProviderTest.model())
           },
         }),
-      ).toEqual({ approved: false })
+      ).toEqual({ approved: false, reason: "invalid_configured_model" })
       expect(fallback).toBe(0)
       expect(decode({ auto_approve: { model: configured } }).auto_approve?.model).toBe(configured)
     }
@@ -876,6 +882,7 @@ describe("permission auto-approve model execution", () => {
       ),
     ).toEqual({
       approved: false,
+      reason: "model_provider_mismatch",
       details: { input: "", output: "(unavailable: model_provider_mismatch)" },
     })
     expect(
@@ -885,6 +892,7 @@ describe("permission auto-approve model execution", () => {
       }),
     ).toEqual({
       approved: false,
+      reason: "model_unavailable",
       details: { input: "", output: "(unavailable: model_unavailable)" },
     })
   })
@@ -915,10 +923,11 @@ describe("permission auto-approve model execution", () => {
       streamed = true
       return response("AUTO_APPROVE")
     }
-    expect(await classify({ disabled: true, stream })).toEqual({ approved: false })
+    expect(await classify({ disabled: true, stream })).toEqual({ approved: false, reason: "disabled" })
     expect(streamed).toBe(false)
     expect(await classify({ disabled: true, showDetails: true, stream })).toEqual({
       approved: false,
+      reason: "disabled",
       details: { input: "", output: "(unavailable: disabled)" },
     })
     expect(streamed).toBe(false)
@@ -936,7 +945,7 @@ describe("permission auto-approve model execution", () => {
           return response("AUTO_APPROVE")
         },
       }),
-    ).toEqual({ approved: false })
+    ).toEqual({ approved: false, reason: "subagent_session" })
     expect(streamed).toBe(false)
   })
 
@@ -989,7 +998,7 @@ describe("permission auto-approve model execution", () => {
           return response("AUTO_APPROVE")
         },
       }),
-    ).toEqual({ approved: false })
+    ).toEqual({ approved: false, reason: "model_unavailable" })
     expect(streamed).toBe(false)
 
     const current = turn("List files", { providerID: "session-provider" })
@@ -1001,14 +1010,18 @@ describe("permission auto-approve model execution", () => {
         },
         request({ tool: current.tool }),
       ),
-    ).toEqual({ approved: false })
+    ).toEqual({ approved: false, reason: "model_provider_mismatch" })
     expect(await classify({ configured: "missing/model", getModel: () => Effect.die(new Error("missing")) })).toEqual({
       approved: false,
+      reason: "model_or_context_error",
     })
-    expect(await classify({ stream: () => Stream.fail(new Error("provider rejected")) })).toEqual({ approved: false })
+    expect(await classify({ stream: () => Stream.fail(new Error("provider rejected")) })).toEqual({
+      approved: false,
+      reason: "model_or_context_error",
+    })
   })
 
   test("fails closed when classification exceeds its deadline", async () => {
-    expect(await classify({ stream: () => Stream.never })).toEqual({ approved: false })
+    expect(await classify({ stream: () => Stream.never })).toEqual({ approved: false, reason: "timeout" })
   }, 20_000)
 })

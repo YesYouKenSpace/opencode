@@ -40,6 +40,23 @@ export function DialogReviewModel() {
       dialog.clear()
       return
     }
+    if (value) {
+      // Validate the pick against the live provider list, and warn on a reasoning
+      // model: the classifier rejects reasoning output, so it would fall back to
+      // prompts on every request.
+      const info = sync.data.provider.find((provider) => provider.id === value.providerID)?.models[value.modelID]
+      if (!info) {
+        toast.show({ variant: "error", message: `${value.providerID}/${value.modelID} is not an available model` })
+        dialog.clear()
+        return
+      }
+      if (isReasoning(info)) {
+        toast.show({
+          variant: "warning",
+          message: `${info.name ?? value.modelID} is a reasoning model — the review classifier rejects reasoning output and will fall back to prompts`,
+        })
+      }
+    }
     permission.setReviewModel(id, value)
     dialog.clear()
   }

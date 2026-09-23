@@ -60,6 +60,13 @@ function request(path: string, directory: string) {
   ).pipe(HttpClientRequest.setUrl(url.pathname), HttpClient.execute)
 }
 
+function classifyWithModel(requestID: string, directory: string, model: string) {
+  const url = new URL(`/permission/${requestID}/classify`, "http://localhost")
+  return HttpClientRequest.fromWeb(
+    new Request(url, { method: "POST", headers: { "x-opencode-directory": directory } }),
+  ).pipe(HttpClientRequest.setUrl(url.pathname), HttpClientRequest.setUrlParam("model", model), HttpClient.execute)
+}
+
 function post(path: string, directory: string, body: unknown) {
   const url = new URL(path, "http://localhost")
   return HttpClientRequest.fromWeb(
@@ -124,7 +131,7 @@ describe("permission classification HttpApi", () => {
 
         const response = yield* request(`/permission/${requestID}/classify`, instance.directory)
         expect(response.status).toBe(200)
-        expect(yield* response.json).toEqual({ approved: false })
+        expect(yield* response.json).toEqual({ approved: false, reason: "disabled" })
         expect((yield* permission.list()).map((item) => item.id)).toContain(requestID)
 
         yield* permission.reply({ requestID, reply: "reject" })
@@ -227,6 +234,50 @@ describe("permission classification HttpApi", () => {
           const items = yield* permission.list()
           expect(items).toHaveLength(1)
           expect(items[0].id).toBe(requestID)
+
+          // The classify query's model override reaches the classifier: an
+          // unparseable value fails closed instead of using the configured model,
+          // proving ?model= is threaded end-to-end (endpoint -> handler -> run()).
+          const callID2 = "call_http_permission_override"
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: assistantID,
+            sessionID: chat.id,
+            type: "tool",
+            callID: callID2,
+            tool: "bash",
+            state: { status: "running", input: { command: "git status" }, time: { start: Date.now() } },
+          })
+          const overrideRequestID = PermissionV1.ID.ascending()
+          const overrideFiber = yield* permission
+            .ask({
+              id: overrideRequestID,
+              sessionID: chat.id,
+              permission: "bash",
+              patterns: ["git status"],
+              metadata: { command: "git status" },
+              always: [],
+              tool: { messageID: assistantID, callID: callID2 },
+              ruleset: [{ permission: "bash", pattern: "*", action: "ask" }],
+            })
+            .pipe(Effect.forkScoped)
+          yield* pollWithTimeout(
+            permission
+              .list()
+              .pipe(Effect.map((list) => (list.some((item) => item.id === overrideRequestID) ? true : undefined))),
+            "override permission did not become pending",
+          )
+          const overrideResponse = yield* classifyWithModel(overrideRequestID, directory, "not-a-valid-model")
+          expect(overrideResponse.status).toBe(200)
+          expect(yield* overrideResponse.json).toEqual({
+            approved: false,
+            reason: "invalid_configured_model",
+            details: { input: "", output: "(unavailable: invalid_configured_model)" },
+          })
+          // Resolve with "once" rather than "reject": a reject cascades to every
+          // other pending request in the session, which would strand the reply below.
+          yield* permission.reply({ requestID: overrideRequestID, reply: "once" })
+          yield* Fiber.await(overrideFiber)
 
           yield* permission.reply({ requestID, reply: "reject" })
           yield* Fiber.await(fiber)
