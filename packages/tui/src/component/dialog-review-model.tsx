@@ -3,6 +3,7 @@ import { pipe, flatMap, entries, filter, map } from "remeda"
 import * as fuzzysort from "fuzzysort"
 import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
+import { useLocal } from "../context/local"
 import { useSync } from "../context/sync"
 import { usePermission } from "../context/permission"
 import { useRoute } from "../context/route"
@@ -21,11 +22,14 @@ type ReviewModelValue = { providerID: string; modelID: string } | undefined
 // (they run at the lowest exposed effort and their verdict is honored) but are kept
 // out of the recommendation because they are slower and can hit the deadline.
 const SMALL_FAMILIES = new Set(["gemini-flash", "gpt-mini", "gpt-nano", "claude-haiku"])
+// Server family preference order (Provider.getSmallModel), used for the best-effort label.
+const SMALL_FAMILIES_PRIORITY = ["gemini-flash", "gpt-nano", "claude-haiku"]
 const isFast = (info: { family?: string }) => !!info.family && SMALL_FAMILIES.has(info.family)
 const isReasoning = (info: { capabilities?: { reasoning?: boolean } }) => info.capabilities?.reasoning === true
 
 export function DialogReviewModel() {
   const sync = useSync()
+  const local = useLocal()
   const permission = usePermission()
   const route = useRoute()
   const dialog = useDialog()
@@ -33,6 +37,41 @@ export function DialogReviewModel() {
   const [query, setQuery] = createSignal("")
 
   const sessionID = createMemo(() => (route.data.type === "session" ? route.data.sessionID : undefined))
+
+  // Best-effort label for what "Default" resolves to, mirroring the server chain
+  // (auto_approve.model, then small_model, then the session provider's small-model
+  // family pick). A provider plugin can still override the family pick server-side,
+  // so the family result is a guess, not a promise.
+  const resolvedDefault = createMemo(() => {
+    const configured = sync.data.config.auto_approve?.model ?? sync.data.config.small_model
+    if (typeof configured === "string" && configured.length > 0)
+      return {
+        label: configured,
+        source:
+          sync.data.config.auto_approve?.model !== undefined
+            ? "From auto_approve.model"
+            : "From small_model",
+      }
+    const current = local.model.current()
+    if (!current) return undefined
+    if (current.providerID === "azure" || current.providerID === "azure-cognitive-services") return undefined
+    const provider = sync.data.provider.find((item) => item.id === current.providerID)
+    if (!provider) return undefined
+    const priority = current.providerID.startsWith("opencode")
+      ? ["gpt-nano"]
+      : current.providerID.startsWith("github-copilot")
+        ? ["gpt-mini", ...SMALL_FAMILIES_PRIORITY]
+        : SMALL_FAMILIES_PRIORITY
+    const models = Object.entries(provider.models).sort(
+      ([aID, a], [bID, b]) =>
+        (b.release_date ?? "").localeCompare(a.release_date ?? "") || bID.localeCompare(aID),
+    )
+    for (const family of priority) {
+      const hit = models.find(([_, info]) => info.family === family)
+      if (hit) return { label: `${provider.id}/${hit[0]}`, source: "Session provider's small model pick" }
+    }
+    return undefined
+  })
 
   function onSelect(value: ReviewModelValue) {
     const id = sessionID()
@@ -65,11 +104,12 @@ export function DialogReviewModel() {
   const options = createMemo(() => {
     const needle = query().trim()
 
+    const resolved = resolvedDefault()
     const defaultOption = {
       value: undefined as ReviewModelValue,
-      title: "Default (configured or fallback)",
+      title: resolved ? `Default (${resolved.label})` : "Default (configured or fallback)",
       releaseDate: "",
-      description: "Use auto_approve.model, else the session provider's small model",
+      description: resolved ? resolved.source : "Use auto_approve.model, else the session provider's small model",
       category: "Review classifier",
       onSelect() {
         onSelect(undefined)
