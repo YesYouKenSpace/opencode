@@ -489,9 +489,13 @@ const layer = Layer.effect(
           Effect.map((cfg) => cfg.auto_approve?.show_details === true),
           Effect.catchCause(() => Effect.succeed(false)),
         )
+        const output =
+          category === "model_or_context_error"
+            ? `(failed: ${category}; check logs for "stream error")`
+            : `(failed: ${category})`
         return (
           detailed
-            ? { approved: false, reason: category, details: { input: "", output: `(failed: ${category})` } }
+            ? { approved: false, reason: category, details: { input: "", output } }
             : { approved: false, reason: category }
         ) satisfies PermissionV1.ClassificationResult
       })

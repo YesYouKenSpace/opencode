@@ -837,7 +837,7 @@ describe("permission auto-approve model execution", () => {
     ).toEqual({
       approved: false,
       reason: "model_or_context_error",
-      details: { input: "", output: "(failed: model_or_context_error)" },
+      details: { input: "", output: '(failed: model_or_context_error; check logs for "stream error")' },
     })
   })
 
